@@ -1,6 +1,7 @@
 package com.poixson.NanoHTTPlib;
 
 import java.io.Closeable;
+import java.net.InetSocketAddress;
 
 
 public abstract class NanoHTTPcommon implements Closeable {
@@ -47,6 +48,22 @@ public abstract class NanoHTTPcommon implements Closeable {
 	}
 
 
+	/**
+	 * Validates host and port, and creates a new InetSocketAddress object.
+	 */
+	protected void validateHostPort() {
+		if(host == null || host.isEmpty()) host = null;
+		if(port == -1) port = DEFAULT_PORT;
+		if(port < 1 || port > MAX_PORT_NUMBER)
+			throw new IllegalArgumentException("Port number out of range");
+		if(host == null)
+			inet = new InetSocketAddress(port);
+		else
+			inet = new InetSocketAddress(host, port);
+	}
+
+
+	// ------------------------------------------------------------------------------- //
 
 
 
