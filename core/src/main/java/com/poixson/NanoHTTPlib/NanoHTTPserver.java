@@ -84,6 +84,7 @@ import java.util.TimeZone;
 
 public class NanoHTTPserver extends NanoHTTPcommon {
 
+	public static final int DEFAULT_MAX_CONNECTIONS = 10;
 	// run state
 	private volatile Boolean running = false;
 	private volatile boolean stopping = false;
