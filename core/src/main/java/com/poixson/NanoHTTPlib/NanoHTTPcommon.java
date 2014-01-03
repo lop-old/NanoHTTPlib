@@ -235,4 +235,15 @@ System.out.println(str);
 	}
 
 
+	/**
+	 * Safely and silently close a Closeable object
+	 */
+	public static final void safeClose(Closeable obj) {
+		if(obj == null) return;
+		try {
+			obj.close();
+		} catch (Exception ignore) {}
+	}
+
+
 }
