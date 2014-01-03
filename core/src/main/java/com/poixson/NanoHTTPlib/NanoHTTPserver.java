@@ -1,4 +1,4 @@
-package fi.iki.elonen;
+package com.poixson.NanoHTTPlib;
 
 import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
@@ -83,6 +83,85 @@ import java.util.TimeZone;
  */
 
 public class NanoHTTPserver extends NanoHTTPcommon {
+
+	// run state
+	private volatile Boolean running = false;
+	private volatile boolean stopping = false;
+
+	// listen socket
+	private volatile ServerSocket socket = null;
+	private final Object serverLock = new Object();
+
+
+	// ------------------------------------------------------------------------------- //
+	// http server constructors
+
+
+	/**
+	 * Creates an HTTP server on default port 80.
+	 */
+	public NanoHTTPserver() {
+		this(DEFAULT_PORT);
+	}
+	/**
+	 * Creates an HTTP server on the given port.
+	 * @param port TCP port to listen on.
+	 */
+	public NanoHTTPserver(int port) {
+		this(DEFAULT_HOST, port);
+	}
+	/**
+	 * Creates an HTTP server on the given host/port.
+	 * @param host IP address or hostname to bind to.
+	 * @param port TCP port to listen on.
+	 */
+	public NanoHTTPserver(final String host, final int port) {
+		super(host, port);
+	}
+
+
+	// ------------------------------------------------------------------------------- //
+	// start/stop socket listener
+
+
+	public void start() throws IOException {
+		// already running
+		if(running || socket != null) return;
+		synchronized(serverLock) {
+			if(running || socket != null) return;
+			socket = new ServerSocket();
+		}
+		// start listener thread
+		setThreadName();
+		thread.setDaemon(true);
+		thread.start();
+	}
+	public void stop() {
+		safeClose(this);
+	}
+
+
+	// ------------------------------------------------------------------------------- //
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 	/**
 	 * Maximum time to wait on Socket.getInputStream().read() (in milliseconds)
 	 * This is required as the Keep-Alive HTTP connections would otherwise
@@ -122,113 +201,8 @@ public class NanoHTTPserver extends NanoHTTPcommon {
 		this(null, port);
 	}
 
-	/**
-	 * Constructs an HTTP server on given hostname and port.
-	 */
-	public NanoHTTPD(String hostname, int port) {
-		this.hostname = hostname;
-		this.myPort = port;
-		setTempFileManagerFactory(new DefaultTempFileManagerFactory());
-		setAsyncRunner(new DefaultAsyncRunner());
-	}
 
-	private static final void safeClose(ServerSocket serverSocket) {
-		if (serverSocket != null) {
-			try {
-				serverSocket.close();
-			} catch (IOException e) {
-			}
-		}
-	}
 
-	private static final void safeClose(Socket socket) {
-		if (socket != null) {
-			try {
-				socket.close();
-			} catch (IOException e) {
-			}
-		}
-	}
-
-	private static final void safeClose(Closeable closeable) {
-		if (closeable != null) {
-			try {
-				closeable.close();
-			} catch (IOException e) {
-			}
-		}
-	}
-
-	/**
-	 * Start the server.
-	 *
-	 * @throws IOException if the socket is in use.
-	 */
-	public void start() throws IOException {
-		myServerSocket = new ServerSocket();
-		myServerSocket.bind((hostname != null) ? new InetSocketAddress(hostname, myPort) : new InetSocketAddress(myPort));
-
-		myThread = new Thread(new Runnable() {
-			@Override
-			public void run() {
-				do {
-					try {
-						final Socket finalAccept = myServerSocket.accept();
-						registerConnection(finalAccept);
-						finalAccept.setSoTimeout(SOCKET_READ_TIMEOUT);
-						final InputStream inputStream = finalAccept.getInputStream();
-						if (inputStream == null) {
-							safeClose(finalAccept);
-							unRegisterConnection(finalAccept);
-						} else {
-							asyncRunner.exec(new Runnable() {
-								@Override
-								public void run() {
-									OutputStream outputStream = null;
-									try {
-										outputStream = finalAccept.getOutputStream();
-										TempFileManager tempFileManager = tempFileManagerFactory.create();
-										HTTPSession session = new HTTPSession(tempFileManager, inputStream, outputStream, finalAccept.getInetAddress());
-										while (!finalAccept.isClosed()) {
-											session.execute();
-										}
-									} catch (Exception e) {
-										// When the socket is closed by the client, we throw our own SocketException
-										// to break the  "keep alive" loop above.
-										if (!(e instanceof SocketException && "NanoHttpd Shutdown".equals(e.getMessage()))) {
-											e.printStackTrace();
-										}
-									} finally {
-										safeClose(outputStream);
-										safeClose(inputStream);
-										safeClose(finalAccept);
-										unRegisterConnection(finalAccept);
-									}
-								}
-							});
-						}
-					} catch (IOException e) {
-					}
-				} while (!myServerSocket.isClosed());
-			}
-		});
-		myThread.setDaemon(true);
-		myThread.setName("NanoHttpd Main Listener");
-		myThread.start();
-	}
-
-	/**
-	 * Stop the server.
-	 */
-	public void stop() {
-		try {
-			safeClose(myServerSocket);
-			closeAllConnections();
-			myThread.join();
-		} catch (Exception e) {
-			e.printStackTrace();
-		}
-	}
 
 	/**
 	 * Registers that a new connection has been set up.
