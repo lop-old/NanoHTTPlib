@@ -81,7 +81,8 @@ import java.util.TimeZone;
  * <p/>
  * See the separate "LICENSE.md" file for the distribution license (Modified BSD licence)
  */
-public abstract class NanoHTTPD {
+
+public class NanoHTTPserver extends NanoHTTPcommon {
 	/**
 	 * Maximum time to wait on Socket.getInputStream().read() (in milliseconds)
 	 * This is required as the Keep-Alive HTTP connections would otherwise
