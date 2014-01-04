@@ -17,6 +17,7 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -267,6 +268,44 @@ public class NanoHTTPserver extends NanoHTTPcommon {
 	 */
 	public interface httpIO {
 		public httpServerResponse serve(httpServerRequest request);
+	}
+
+
+	/**
+	 * Passes a request on to request handlers until a suitable handler is found.
+	 * @param request
+	 * @return response
+	 */
+	public httpServerResponse serve(httpServerRequest request) {
+		// find a handler to execute request
+		Iterator<httpIO> it = handlers.iterator();
+		httpServerResponse result = null;
+		while(it.hasNext()) {
+			final httpIO io;
+			try {
+				io = it.next();
+			} catch (Exception ignore) {
+				continue;
+			}
+			try {
+				result = io.serve(request);
+			} catch (Exception ignore) {
+				result = null;
+				continue;
+			}
+			if(result != null) break;
+		}
+		if(result == null)
+			result = new httpServerResponse(request,
+				httpStatus.NOT_FOUND, DEFAULT_MIME, "Resource not found!");
+		return result;
+	}
+	/**
+	 * Registers a request handler to listen for http requests.
+	 * @param handler httpIO request handler to be registered.
+	 */
+	public void registerHandler(httpIO handler) {
+		this.handlers.add(handler);
 	}
 
 
