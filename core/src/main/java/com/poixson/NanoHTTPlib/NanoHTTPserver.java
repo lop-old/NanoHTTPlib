@@ -1,8 +1,12 @@
 package com.poixson.NanoHTTPlib;
 
+import java.io.Closeable;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.SocketTimeoutException;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArraySet;
@@ -165,6 +169,141 @@ public class NanoHTTPserver extends NanoHTTPcommon {
 			return new httpServerResponse(request, this.getStatus(), DEFAULT_MIME, this.getMessage());
 		}
 	}
+
+
+	// ------------------------------------------------------------------------------- //
+
+
+	/**
+	 * Worker contains the connected socket and thread, and handles communications.
+	 */
+	public static class httpServerWorker extends Thread implements Closeable {
+
+		private final NanoHTTPserver parent;
+		private final int index;
+		private final Socket socket;
+		private final InputStream in;
+		private final OutputStream out;
+
+		// requests
+		private volatile int countRequests = 0;
+
+
+		public httpServerWorker(final int index, final NanoHTTPserver parent,
+				final Socket accept, final InputStream in, final OutputStream out) {
+			if(accept == null) throw new NullPointerException();
+			if(in  == null) throw new NullPointerException();
+			if(out == null) throw new NullPointerException();
+			this.index = index;
+			this.parent = parent;
+			this.socket = accept;
+			this.in  = in;
+			this.out = out;
+			// thread name
+			{
+				final StringBuilder name = new StringBuilder();
+				name.append(parent.getThreadName());
+				name.append("[").append(Integer.toString(index)).append("]");
+				this.setName(name.toString());
+			}
+			// start listener thread
+			this.setDaemon(true);
+			this.start();
+		}
+
+
+		@Override
+		public void run() {
+//TempFileManager tempFileManager = tempFileManagerFactory.create();
+//final httpTempFileManager tempFiles = null;
+//			final httpSession session = new httpServerSession(tempFiles, in, out);
+			httpServerRequest request = null;
+			httpServerResponse result = null;
+			while(!socket.isClosed()) {
+				try {
+					// wait for then parse the headers and load data key/value pairs
+					request = new httpServerRequest(in);
+					// find a handler to execute request
+					result = parent.serve(request);
+				} catch (SocketTimeoutException ignore) {
+					request = null;
+					result = null;
+					break;
+				} catch (NanoHTTPserver.httpResponseException e) {
+					result = e.getResponse(request);
+					e.printStackTrace();
+					break;
+				} catch (Exception e) {
+					// When the socket is closed by the client, we throw our own SocketException
+					// to break the "keep alive" loop above.
+//					if(!(e instanceof SocketException && EXCEPTION_SHUTDOWN_MSG.equals(e.getMessage())))
+					result = null;
+					e.printStackTrace();
+					break;
+				}
+				// handle errors
+				if(request == null || result == null) break;
+				// +1 request
+				incrementRequests();
+				if(result.isChunked()) break;
+				// send the result
+				send(result);
+				request = null;
+				result = null;
+			}
+			if(request != null) {
+				if(result == null) {
+					result = new httpServerResponse(
+						request,
+						httpStatus.INTERNAL_ERROR,
+						NanoHTTPserver.DEFAULT_MIME,
+						""
+					);
+				}
+				// send the result
+				if(result != null)
+					send(result);
+			}
+			request = null;
+			result = null;
+			// close
+			NanoHTTPserver.safeClose(this);
+		}
+		public void send(httpServerResponse result) {
+			if(result == null) return;
+			try {
+				result.send(out);
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+		}
+
+
+		@Override
+		public void close() throws IOException {
+			NanoHTTPserver.safeClose(socket);
+			NanoHTTPserver.safeClose(in);
+			NanoHTTPserver.safeClose(out);
+			parent.unregisterWorker(this);
+		}
+		public boolean isClosed() {
+			return socket.isClosed() || !Thread.currentThread().isAlive();
+		}
+
+
+		protected int incrementRequests() {
+			parent.incrementRequests();
+			return ++countRequests;
+		}
+		public int getRequests() {
+			return countRequests;
+		}
+
+
+	}
+
+
+	// ------------------------------------------------------------------------------- //
 
 
 
