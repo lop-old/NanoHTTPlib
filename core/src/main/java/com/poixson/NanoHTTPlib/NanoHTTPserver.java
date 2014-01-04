@@ -141,6 +141,13 @@ public class NanoHTTPserver extends NanoHTTPcommon {
 	}
 
 
+	public boolean isRunning() {
+		if(stopping || socket == null)
+			return false;
+		return running;
+	}
+
+
 	// ------------------------------------------------------------------------------- //
 	// socket listener thread
 
@@ -257,6 +264,20 @@ public class NanoHTTPserver extends NanoHTTPcommon {
 	}
 	protected String getThreadName() {
 		return threadName;
+	}
+
+
+	protected int incrementConnections() {
+		return ++countConnections;
+	}
+	protected int incrementRequests() {
+		return ++countRequests;
+	}
+	public int totalConnections() {
+		return countConnections;
+	}
+	public int totalRequests() {
+		return countRequests;
 	}
 
 
