@@ -1,14 +1,29 @@
 package com.poixson.NanoHTTPlib;
 
+import java.io.BufferedReader;
+import java.io.ByteArrayInputStream;
 import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
+import java.io.PrintWriter;
+import java.io.UnsupportedEncodingException;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketTimeoutException;
+import java.net.URLDecoder;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.Properties;
 import java.util.Set;
+import java.util.StringTokenizer;
+import java.util.TimeZone;
 import java.util.concurrent.CopyOnWriteArraySet;
 
 /**
@@ -305,6 +320,321 @@ public class NanoHTTPserver extends NanoHTTPcommon {
 
 	// ------------------------------------------------------------------------------- //
 
+
+	public static class httpServerRequest {
+
+		public final BufferedReader reader;
+
+		private final Properties pre     = new Properties();
+		private final Properties query   = new Properties();
+		private final Properties headers = new Properties();
+//		private final Properties files   = new Properties();
+
+
+		/**
+		 * Decodes the sent headers and loads the data into Key/value pairs
+		 */
+		public httpServerRequest(InputStream in) throws IOException {
+			reader = new BufferedReader(new InputStreamReader(in, "UTF-8"));
+//			// decode the header into java properties
+
+			// read the request line
+			final StringTokenizer token;
+			{
+				final String line = reader.readLine();
+				if(line == null) return;
+System.out.println(line);
+				token = new StringTokenizer(line);
+			}
+			if(!token.hasMoreTokens())
+				throw new NanoHTTPserver.httpResponseException(
+					httpStatus.BAD_REQUEST,
+					"BAD REQUEST: Syntax error. Usage: GET /example/file.html"
+				);
+			pre.put("method", token.nextToken());
+			if(!token.hasMoreTokens())
+				throw new NanoHTTPserver.httpResponseException(
+					httpStatus.BAD_REQUEST,
+					"BAD REQUEST: Missing URI. Usage: GET /example/file.html"
+				);
+			String uri = token.nextToken();
+			// decode parameters from the URI
+			final int qmi = uri.indexOf('?');
+			if(qmi >= 0) {
+				decodeQuery(uri.substring(qmi+1), query);
+				uri = decodePercent(uri.substring(0, qmi));
+			} else {
+				uri = decodePercent(uri);
+			}
+			pre.put("uri", uri);
+			// If there's another token, it's protocol version,
+			// followed by HTTP headers. Ignore version but parse headers.
+			// NOTE: this now forces header names lowercase since they are
+			// case insensitive and vary by client.
+			if(token.hasMoreTokens()) {
+				String line = reader.readLine();
+				while(line != null && line.trim().length() > 0) {
+					final int p = line.indexOf(':');
+					if(p >= 0)
+						headers.put(
+							line.substring(0, p).trim().toLowerCase(Locale.US),
+							line.substring(p+1).trim()
+						);
+					line = reader.readLine();
+				}
+			}
+//			} catch () {
+//				throw new ResponseException(httpStatus.INTERNAL_ERROR, "SERVER INTERNAL ERROR: IOException: "+e.getMessage(), e);
+//			}
+//String remoteIp = addr.isLoopbackAddress() || addr.isAnyLocalAddress() ? "127.0.0.1" : addr.getHostAddress().toString();
+//headers.put("remote-addr", remoteIp);
+//headers.put("http-client-ip", remoteIp);
+//String remoteIp = inetAddress.isLoopbackAddress() || inetAddress.isAnyLocalAddress() ? "127.0.0.1" : inetAddress.getHostAddress().toString();
+//headers = new HashMap<String, String>();
+//headers.put("remote-addr", remoteIp);
+//headers.put("http-client-ip", remoteIp);
+		}
+
+
+		/**
+		 * HTTP request method.
+		 * @return httpMethod object.
+		 */
+		public httpMethod getMethod() {
+			final String str = (String) this.pre.get("method");
+			if(str == null || str.isEmpty())
+				return null;
+			return httpMethod.lookup(str);
+		}
+
+
+		/**
+		 * Decodes parameters in percent-encoded URI-format
+		 * ( e.g. "name=Jack%20Daniels&pass=Single%20Malt" )
+		 * and adds them to given Properties.
+		 * NOTE: this doesn't support multiple identical keys due to the
+		 * simplicity of Properties -- if you need multiples, you might want to
+		 * replace the Properties with a Hashtable of Vectors or such.
+		 */
+		protected static void decodeQuery(String parms, Properties query) {
+			if(parms == null) return;
+			final StringTokenizer token = new StringTokenizer(parms, "&");
+			while(token.hasMoreTokens()) {
+				final String str = token.nextToken();
+				final int p = str.indexOf('=');
+				if(p >= 0) {
+					query.put(
+						decodePercent(str.substring(0, p)),
+						decodePercent(str.substring(p+1))
+					);
+				} else {
+					query.put(
+						decodePercent(str),
+						""
+					);
+				}
+//				query.put(
+//					decodePercent(
+//						(p >= 0) ? str.substring(0, p) : str
+//					).trim(),
+//					(p >= 0) ? decodePercent(str.substring(p+1)) : ""
+//				);
+			}
+		}
+		/**
+		 * Decode percent encoded <code>String</code> values.
+		 * @param str the percent encoded <code>String</code>
+		 * @return expanded form of the input, for example "foo%20bar" becomes "foo bar"
+		 */
+		protected static String decodePercent(String str) {
+			String decoded = null;
+			try {
+				decoded = URLDecoder.decode(str, NanoHTTPserver.UTF8);
+			} catch (UnsupportedEncodingException ignored) {}
+			return decoded;
+		}
+
+
+	}
+
+
+	// ------------------------------------------------------------------------------- //
+
+
+	/**
+	 * HTTP response. Return one of these from serve().
+	 */
+	public static class httpServerResponse {
+
+//		private final httpServerRequest request;
+
+		// HTTP status code after processing, e.g. "200 OK", HTTP_OK
+		private volatile httpStatus status = httpStatus.OK;
+		// MIME type of content, e.g. "text/html"
+		private volatile httpMime mime = null; // NanoHTTPserver.DEFAULT_MIME
+		// Request method used for this request.
+		private final httpMethod method;
+
+		// Headers for the HTTP response. Use addHeader() to add lines.
+		private final Map<String, String> headers = new HashMap<String, String>();
+		// Data of the response.
+		private volatile InputStream data = null;
+		// Send data in chunked mode (rather than fixed length)
+		private volatile boolean chunked = false;
+		// basic http authentication
+		private volatile httpBasicAuth basicAuth = null;
+
+
+		/**
+		 * Convenience method assuming OK status and plain text mime type.
+		 */
+		public httpServerResponse(httpServerRequest request, String msg) {
+			this(request, httpStatus.OK, httpMime.PLAINTEXT, msg);
+		}
+		/**
+		 * Convenience method that makes an InputStream out of given text.
+		 */
+		public httpServerResponse(httpServerRequest request, httpStatus status, httpMime mime, String msg) {
+			this(request, status, mime, (InputStream) null);
+			if(msg != null) {
+				try {
+					this.data = new ByteArrayInputStream(
+						msg.getBytes(NanoHTTPserver.UTF8)
+					);
+				} catch (UnsupportedEncodingException e) {
+					e.printStackTrace();
+				}
+			}
+		}
+		/**
+		 * Basic constructor.
+		 */
+		public httpServerResponse(httpServerRequest request, httpStatus status, httpMime mime, InputStream data) {
+			if(request == null) throw new NullPointerException("request cannot be null");
+//			this.request = request;
+			this.method = request.getMethod();
+			if(status != null)
+				this.status = status;
+			if(mime != null)
+				this.mime = mime;
+			if(data != null)
+				this.data = data;
+		}
+
+
+		/**
+		 * Sends given response to the socket.
+		 */
+		public void send(OutputStream out) {
+			if(out == null) throw new NullPointerException();
+			// local copies
+			final httpStatus tmpStatus = this.status;
+			final httpMime tmpMime = this.mime == null ? NanoHTTPserver.DEFAULT_MIME : this.mime;
+			final Map<String, String> tmpHeaders = new HashMap<String, String>(this.headers);
+			final InputStream tmpData = this.data;
+			final boolean tmpChunked = this.chunked;
+			final httpBasicAuth tmpBasicAuth = (this.basicAuth == null ? null : this.basicAuth.clone());
+			// validate data
+			if(tmpStatus == null) throw new Error("send(): Status can't be null.");
+			// build http headers
+			final String EOL = "\r\n";
+			final PrintWriter pw = new PrintWriter(out);
+			try {
+				pw.print("HTTP/1.1 "+tmpStatus.toString()+EOL);
+				// date/time
+				if(tmpHeaders.get("Date") == null)
+					pw.print("Date: "+getDateTime()+EOL);
+				// server software
+				pw.print("Server: NanoHTTPlib/"+NanoHTTPserver.version+EOL);
+				// basic auth
+				if(tmpBasicAuth != null)
+					pw.print("WWW-Authenticate: Basic realm=\""+tmpBasicAuth.getRealm()+"\""+EOL);
+				// HEAD method safety
+				if(httpMethod.HEAD.equals(this.method))
+					data = null;
+				// content size
+				int pending = -1;
+				if(!tmpChunked && tmpData != null) {
+					pending = tmpData.available();
+					pw.print("Accept-Ranges: bytes"+EOL);
+					pw.print("Content-Length: "+Integer.toString(pending)+EOL);
+					pw.print("Connection: keep-alive"+EOL);
+//					pw.print("Content-MD5: "+MD5(data)+EOL);
+				} else {
+					chunked = true;
+					pw.print("Transfer-Encoding: chunked"+EOL);
+					pw.print("Connection: close"+EOL);
+				}
+				// content type
+				pw.print("Content-Type: "+tmpMime.toString()+EOL);
+				// custom headers
+				if(!tmpHeaders.isEmpty()) {
+					for(Entry<String, String> entry : tmpHeaders.entrySet())
+						pw.print(entry.getKey()+": "+entry.getValue()+EOL);
+				}
+				// headers finished
+				pw.print(EOL);
+				pw.flush();
+				// send data
+				if(pending > 0) {
+					final byte[] CRLF = EOL.getBytes();
+					final int BUFFER_SIZE = 16 * 1024; // 16K
+					final byte[] buff = new byte[BUFFER_SIZE];
+					int read;
+					// buffer and send in chunks
+					if(tmpChunked) {
+						while((read = data.read(buff)) > 0) {
+							out.write(String.format("%x"+EOL, read).getBytes());
+							out.write(buff, 0, read);
+							out.write(CRLF);
+						}
+						out.write(String.format("0"+EOL+EOL).getBytes());
+
+					// fixed buffer, all fits at once
+					} else {
+						while(pending > 0) {
+							final int size = (pending > BUFFER_SIZE) ? BUFFER_SIZE : pending;
+							read = data.read(buff, 0, size);
+							if(read <= 0) break;
+							out.write(buff, 0, read);
+							pending -= read;
+						}
+					}
+					out.flush();
+				}
+			} catch (Exception e) {
+			//} catch (IOException e) {
+				// Couldn't write? No can do.
+				e.printStackTrace();
+			} finally {
+//				NanoHTTPserver.safeClose(out);
+				NanoHTTPserver.safeClose(data);
+			}
+		}
+
+
+		/**
+		 * Get formatted date/time timestamp for http response header.
+		 *
+		 * @return example: Thu, 02 Jan 2014 16:34:42 GMT
+		 */
+		private final String getDateTime() {
+			final SimpleDateFormat gmtFormat =
+				new SimpleDateFormat("E, d MMM yyyy HH:mm:ss 'GMT'", Locale.US);
+			gmtFormat.setTimeZone(TimeZone.getTimeZone("GMT"));
+			return gmtFormat.format(new Date());
+		}
+
+
+		public boolean isChunked() {
+			return chunked;
+		}
+
+
+	}
+
+
+	// ------------------------------------------------------------------------------- //
 
 
 
