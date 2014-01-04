@@ -637,6 +637,69 @@ System.out.println(line);
 	// ------------------------------------------------------------------------------- //
 
 
+	public static class httpBasicAuth implements Cloneable {
+
+		private final String realm;
+		private final Map<String, String> accounts = new HashMap<String, String>();
+
+
+		public httpBasicAuth(final String realm,
+				final String username, final String password) {
+			this(realm);
+			addAccount(username, password);
+		}
+		public httpBasicAuth(final String realm) {
+			if(realm == null || realm.isEmpty()) throw new NullPointerException();
+			this.realm = realm;
+		}
+		@Override
+		public httpBasicAuth clone() {
+			httpBasicAuth basic = new httpBasicAuth(this.realm);
+			synchronized(accounts) {
+				for(Entry<String, String> entry : accounts.entrySet()) {
+					basic.addAccount(
+						entry.getKey(),
+						entry.getValue()
+					);
+				}
+			}
+			return basic;
+		}
+
+
+		public String getRealm() {
+			return this.realm;
+		}
+
+
+		public void addAccount(final String username, final String password) {
+			if(username == null || username.isEmpty()) throw new NullPointerException();
+			if(password == null || password.isEmpty()) throw new NullPointerException();
+			synchronized(accounts) {
+				accounts.put(username, password);
+			}
+		}
+
+
+		/**
+		 * Validate username/password.
+		 *
+		 * @param username
+		 * @param password
+		 * @return Return true only if username has an account with the correct password.
+		 */
+		public boolean validate(final String username, final String password) {
+			if(username == null || username.isEmpty()) return false;
+			if(password == null || password.isEmpty()) return false;
+			synchronized(accounts) {
+				return password.equals(accounts.get(username));
+			}
+		}
+
+
+	}
+
+
 
 
 
