@@ -141,6 +141,125 @@ public class NanoHTTPserver extends NanoHTTPcommon {
 
 
 	// ------------------------------------------------------------------------------- //
+	// socket listener thread
+
+
+	/**
+	 * Socket listener thread.
+	 */
+	private final Thread thread = new Thread() {
+		@Override
+		public void run() {
+			runListenerLoop();
+		}
+	};
+
+
+	/**
+	 * Socket listener loop.
+	 */
+	protected void runListenerLoop() {
+		try {
+			synchronized(running) {
+				if(running) {
+					System.out.println("Socket listener already running!");
+					return;
+				}
+				running = true;
+			}
+			System.out.println("Starting http server on "+(host==null ? "port " : host+":")+Integer.toString(port)+" ..");
+			// start listening
+			validateHostPort();
+			socket.bind(inet, SERVER_BACKLOG_CONNECTIONS);
+			// main listener loop
+			while(isRunning()) {
+				if(socket.isClosed()) break;
+				Socket accept = null;
+				try {
+					// wait for and accept connection
+					accept = socket.accept();
+					if(socket == null || stopping) throw new IOException();
+					Accept(accept);
+				} catch (IOException e) {
+					NanoHTTPserver.safeClose(accept);
+					e.printStackTrace();
+					try {
+						Thread.sleep(50);
+					} catch (InterruptedException ignore) {
+						break;
+					}
+					continue;
+				}
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+		} finally {
+			running = false;
+			stop();
+		}
+	}
+	/**
+	 * Accept a connection, and create a new worker thread
+	 * @param accept The socket object which has been accepted.
+	 * @throws IOException
+	 */
+	protected void Accept(Socket accept) throws IOException {
+		if(stopping) throw new IOException();
+		InputStream  in  = null;
+		OutputStream out = null;
+		try {
+			accept.setSoTimeout(NanoHTTPserver.SOCKET_TIMEOUT);
+			// io streams
+			in  = accept.getInputStream();
+			out = accept.getOutputStream();
+			//if(in  == null) throw new IOException();
+			//if(out == null) throw new IOException();
+			// +1 connection
+			final int count = incrementConnections();
+			if(stopping) throw new IOException();
+			synchronized(connections) {
+				if(stopping) throw new IOException();
+				// new socket worker thread
+				final httpServerWorker worker =
+					createServerWorker(count, accept, in, out);
+				if(worker == null) throw new IOException("Failed to create a socket worker");
+				connections.add(worker);
+			}
+		} catch (IOException e) {
+			safeClose(in);
+			safeClose(out);
+			safeClose(accept);
+			throw(e);
+		}
+	}
+
+
+	/**
+	 * Factory for socket worker thread.
+	 * Note: override this to use a custom worker.
+	 */
+	protected httpServerWorker createServerWorker(final int index,
+			final Socket accept, final InputStream in, final OutputStream out) {
+		return new httpServerWorker(index, this, accept, in, out);
+	}
+
+
+	// listener thread name
+	private volatile String threadName = null;
+	private void setThreadName() {
+		final StringBuilder name = new StringBuilder("NanoHTTPserver");
+		if(host != null && !host.isEmpty())
+			name.append(":").append(host);
+		name.append(":").append(Integer.toString(port));
+		this.threadName = name.toString();
+		thread.setName(name.toString());
+	}
+	protected String getThreadName() {
+		return threadName;
+	}
+
+
+	// ------------------------------------------------------------------------------- //
 
 
 	/**
