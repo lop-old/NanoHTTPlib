@@ -124,10 +124,15 @@ public class NanoHTTPserver extends NanoHTTPcommon {
 	// ------------------------------------------------------------------------------- //
 
 
+	/**
+	 * Request handler.
+	 */
+	public interface httpIO {
+		public httpServerResponse serve(httpServerRequest request);
+	}
 
 
-
-
+	// ------------------------------------------------------------------------------- //
 
 
 
