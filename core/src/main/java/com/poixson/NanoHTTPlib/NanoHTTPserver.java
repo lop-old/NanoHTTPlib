@@ -135,6 +135,36 @@ public class NanoHTTPserver extends NanoHTTPcommon {
 	// ------------------------------------------------------------------------------- //
 
 
+	/**
+	 * Response exception
+	 */
+	public static final class httpResponseException extends IOException {
+		private static final long serialVersionUID = 1L;
+		private final httpStatus status;
+		public httpResponseException(String msg) {
+			super(msg);
+			this.status = httpStatus.INTERNAL_ERROR;
+		}
+		public httpResponseException(httpStatus status, String msg) {
+			super(msg);
+			this.status = status;
+		}
+		public httpResponseException(String msg, Exception e) {
+			super(msg, e);
+			this.status = httpStatus.INTERNAL_ERROR;
+		}
+		public httpResponseException(httpStatus status, String msg, Exception e) {
+			super(msg, e);
+			this.status = status;
+		}
+		public httpStatus getStatus() {
+			return status;
+		}
+		public httpServerResponse getResponse(httpServerRequest request) {
+			if(request == null) return null;
+			return new httpServerResponse(request, this.getStatus(), DEFAULT_MIME, this.getMessage());
+		}
+	}
 
 
 
