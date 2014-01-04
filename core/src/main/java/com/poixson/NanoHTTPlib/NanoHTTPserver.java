@@ -261,6 +261,60 @@ public class NanoHTTPserver extends NanoHTTPcommon {
 
 
 	// ------------------------------------------------------------------------------- //
+	// close sockets
+
+
+	/**
+	 * Close the socket listener.
+	 */
+	@Override
+	public void close() throws IOException {
+		stopping = true;
+		try {
+			socket.close();
+		} catch (Exception ignore) {}
+		try {
+			closeConnections();
+		} catch (Exception ignore) {}
+		socket = null;
+	}
+	/**
+	 * Close all sockets and wait for threads to return.
+	 * Note: This doesn't close the listener.
+	 */
+	public void closeAll() {
+//TODO:
+	}
+	/**
+	 * Unregister a closed socket worker.
+	 * @param worker, already closed.
+	 */
+	protected void unregisterWorker(httpServerWorker worker) {
+		if(worker == null) return;
+		if(worker.isClosed()) {
+			synchronized(connections) {
+				connections.remove(worker);
+			}
+		}
+	}
+	/**
+	 * Close all established connections.
+	 */
+	public void closeConnections() {
+		synchronized(connections) {
+			final Iterator<httpServerWorker> it = connections.iterator();
+			while(it.hasNext()) {
+				final httpServerWorker worker = it.next();
+				if(worker != null)
+					safeClose(worker);
+				// not needed (this is handled by the worker.close() method)
+				//it.remove();
+			}
+		}
+	}
+
+
+	// ------------------------------------------------------------------------------- //
 
 
 	/**
