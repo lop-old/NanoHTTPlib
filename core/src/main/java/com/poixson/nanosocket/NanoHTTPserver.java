@@ -1,4 +1,4 @@
-package com.poixson.NanoHTTPlib;
+package com.poixson.nanosocket;
 
 import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
